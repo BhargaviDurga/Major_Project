@@ -4,11 +4,29 @@ import json
 from form_filler import extract_text_from_id, fill_pdf_form
 from werkzeug.utils import secure_filename
 from flask_cors import CORS
+import tempfile
+import atexit
+import shutil
+
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})  # Allow all origins for simplicity
+CORS(app, resources={r"/*": {"origins": [
+      "http://localhost:3000",  # Dev
+      "https://your-frontend-url.onrender.com"  # Production
+    ]}})  # Allow all origins for simplicity
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+
+# Create a temporary directory
+TEMP_UPLOAD_FOLDER = tempfile.mkdtemp()
+
+# Cleanup function
+def cleanup():
+    shutil.rmtree(TEMP_UPLOAD_FOLDER, ignore_errors=True)
+
+atexit.register(cleanup)
 
 @app.route("/upload-id", methods=["POST"])
 def upload_id():
@@ -24,12 +42,12 @@ def upload_id():
         os.remove(extracted_data_path)
 
     for file in files:
-        filename = secure_filename(file.filename)
-        file_path = os.path.join(UPLOAD_FOLDER, filename)
-        file.save(file_path)
+        temp_file = tempfile.NamedTemporaryFile(dir=TEMP_UPLOAD_FOLDER, delete=False)
+        file.save(temp_file.name)
+        temp_file.close()
 
         try:
-            new_data = extract_text_from_id(file_path)
+            new_data = extract_text_from_id(temp_file.name)
             for key, value in new_data.items():
                 if key in extracted_data and extracted_data[key] == "NOT FOUND":
                     extracted_data[key] = value
@@ -84,4 +102,4 @@ def fill_form():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run()
