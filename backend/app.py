@@ -10,10 +10,14 @@ import shutil
 
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": [
-      "http://localhost:3000",  # Dev
-      "https://your-frontend-url.onrender.com"  # Production
-    ]}})  # Allow all origins for simplicity
+CORS(app, resources={
+  r"/*": {
+    "origins": [
+      "https://smartforms-frontend.onrender.com",
+      "http://localhost:3000"  # Keep for local testing
+    ]
+  }
+})
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
