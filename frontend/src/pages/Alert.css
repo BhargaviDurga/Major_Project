@@ -1,0 +1,16 @@
+.alert {
+    padding: 1rem;
+    border-radius: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .alert-destructive {
+    background-color: #f8d7da;
+    color: #721c24;
+  }
+  
+  .alert-description {
+    flex: 1;
+  }
