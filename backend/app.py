@@ -101,46 +101,62 @@ def update_data():
 def fill_form():
     """Endpoint for filling PDF forms"""
     try:
-        # Check file upload
+        # Validate file upload
         if "file" not in request.files:
+            logger.error("No file part in request")
             return jsonify({"error": "No file uploaded"}), 400
 
         file = request.files["file"]
         if file.filename == '':
+            logger.error("Empty filename in request")
             return jsonify({"error": "No selected file"}), 400
 
-        # Get extracted data (now comes from frontend)
+        # Validate and parse extracted data
         extracted_data = request.form.get("extracted_data")
         if not extracted_data:
+            logger.error("No extracted data provided")
             return jsonify({"error": "No extracted data provided"}), 400
 
         try:
             extracted_data = json.loads(extracted_data)
-        except json.JSONDecodeError:
+            if not isinstance(extracted_data, dict):
+                raise ValueError("Extracted data must be a dictionary")
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.error(f"Invalid extracted data format: {str(e)}")
             return jsonify({"error": "Invalid extracted data format"}), 400
 
         # Process PDF
         with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp_pdf:
             file.save(tmp_pdf.name)
             
-            # Create temp output directory
             with tempfile.TemporaryDirectory() as temp_dir:
                 output_path = os.path.join(temp_dir, "filled_form.pdf")
-                filled_path = fill_pdf_form(tmp_pdf.name, extracted_data, output_path)
                 
-                if not os.path.exists(filled_path):
-                    raise ValueError("Failed to generate filled PDF")
-                
-                return send_file(
-                    filled_path,
-                    mimetype="application/pdf",
-                    as_attachment=False,
-                    download_name="filled_form.pdf"
-                )
+                try:
+                    filled_path = fill_pdf_form(
+                        tmp_pdf.name,
+                        extracted_data,
+                        output_path
+                    )
+                    
+                    if not os.path.exists(filled_path):
+                        logger.error("PDF generation failed - no output file created")
+                        raise ValueError("Failed to generate filled PDF")
+                    
+                    logger.info("Successfully generated filled PDF")
+                    return send_file(
+                        filled_path,
+                        mimetype="application/pdf",
+                        as_attachment=False,
+                        download_name="filled_form.pdf"
+                    )
+                except Exception as e:
+                    logger.error(f"PDF processing failed: {str(e)}")
+                    return jsonify({"error": f"Failed to process PDF: {str(e)}"}), 500
 
     except Exception as e:
-        logger.error(f"Error in fill-form: {str(e)}")
-        return jsonify({"error": f"Failed to process PDF: {str(e)}"}), 500
+        logger.error(f"Unexpected error in fill-form: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 if __name__ == "__main__":
     app.run()

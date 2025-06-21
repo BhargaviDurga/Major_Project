@@ -16,6 +16,7 @@ from PIL import ImageDraw, ImageFont
 import textwrap
 import tempfile
 import shutil
+import logging
 
 def extract_text_from_id(image_path):
     os.environ["GOOGLE_API_KEY"] = "AIzaSyBSlkTW52fBvrHs-oByEb0AgSBo44qjm0A"
@@ -155,17 +156,33 @@ def merge_multiline_fields(data, threshold_x=70, threshold_y=18):
 
     return merged_fields
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 def fill_form_with_extracted_data(pdf_path, extracted_data, word_positions, output_pdf_path):
+    """Fill PDF form fields with extracted data at specified positions"""
     try:
+        # Validate input data
         if not isinstance(extracted_data, dict):
-            raise ValueError("extracted_data should be a dictionary")
+            raise ValueError("extracted_data must be a dictionary")
+        if not isinstance(word_positions, dict):
+            raise ValueError("word_positions must be a dictionary")
 
-        images = pdf2image.convert_from_path(pdf_path)  # Convert PDF to images
-        font_path = "arialbd.ttf"  # Replace with the path to your TrueType font file
-        font_size = 30
-        font = ImageFont.truetype(font_path, font_size)
+        # Convert PDF to images
+        images = pdf2image.convert_from_path(pdf_path)
+        if not images:
+            raise ValueError("Failed to convert PDF to images")
 
-        mapping = {
+        # Font configuration
+        try:
+            font = ImageFont.truetype("arialbd.ttf", 30)
+        except IOError:
+            font = ImageFont.load_default()
+            logger.warning("Using default font as arialbd.ttf not found")
+
+        # Field mapping configuration
+        FIELD_MAPPING = {
             ".name*": "Name",
             ".date of birth*": "Date of Birth",
             ".pan*": "PAN Number",
@@ -173,85 +190,81 @@ def fill_form_with_extracted_data(pdf_path, extracted_data, word_positions, outp
             "address*": "Address",
             "mobile no.": "Phone Number",
             "First Name": "First Name",
-            "Last Name": "Last Name",
+            "Last Name": "Last Name"
         }
 
-        # Calculate a fixed width for each letter
-        sample_letter = "G"  # Use "A" or any character as a reference
-        fixed_letter_width = font.getbbox(sample_letter)[2] + 13  # Width of "A" + spacing
-
         for page_num, image in enumerate(images):
-            img_cv = np.array(image)
-            img_pil = image.copy()
-            draw = ImageDraw.Draw(img_pil)
-
-            for word, pos_list in word_positions.items():
-                extracted_key = next(
-                    (mapping[key] for key in mapping.keys() if key.lower() in word.lower()), None
-                )
-                if extracted_key and extracted_data.get(extracted_key) and extracted_data[extracted_key] != "NOT FOUND":
-                    value_to_fill = extracted_data[extracted_key]
-
-                    for (page, x, y, w, h) in pos_list:
-                        if page == page_num + 1:
-                            x_offset = x + 225  # Adjust the x_offset as needed
-                            y_offset = y - 10  # Adjust the y_offset as needed
-                            available_width = 100 # Maximum width for the address, adjust as needed
-
-                            if extracted_key == "Address":
-                                # Wrap the address text
-                                address = value_to_fill[:74]
-                                # Wrap the truncated address text
-                                wrapped_text = textwrap.fill(address, width=40)
-                                lines = wrapped_text.splitlines()
-                                line_height = font.getbbox("A")[3] # Approximate line height
-
-                                for line in lines:
-                                    x_line_offset = x_offset  # Reset x_line_offset for each line
-                                    for letter in line:
-                                        draw.text((x_line_offset, y_offset), letter, fill="Blue", font=font)
-                                        x_line_offset += fixed_letter_width    # Letter spacing for address
-                                    y_offset += line_height + 22  # Adjust vertical spacing
+            draw = ImageDraw.Draw(image)
+            
+            for word, positions in word_positions.items():
+                field_name = next(
+                    (FIELD_MAPPING[key] for key in FIELD_MAPPING 
+                     if key.lower() in word.lower()), None)
+                
+                if field_name and extracted_data.get(field_name, "NOT FOUND") != "NOT FOUND":
+                    value = extracted_data[field_name]
+                    
+                    for (page, x, y, w, h) in positions:
+                        if page == page_num + 1:  # 1-based page numbers
+                            x_offset = x + 225
+                            y_offset = y - 10
+                            
+                            if field_name == "Address":
+                                # Handle address with text wrapping
+                                wrapped_text = textwrap.fill(value[:74], width=40)
+                                for line in wrapped_text.splitlines():
+                                    draw.text((x_offset, y_offset), line, fill="blue", font=font)
+                                    y_offset += 35  # Line height
                             else:
-                                # For other fields, draw text normally
-                                for letter in value_to_fill:
-                                    draw.text((x_offset, y_offset), letter, fill="Blue", font=font)
-                                    x_offset += fixed_letter_width    # Adjust the spacing between letters
+                                # Handle regular fields
+                                draw.text((x_offset, y_offset), value, fill="blue", font=font)
 
-            images[page_num] = img_pil  # Update image
-
-        images[0].save(output_pdf_path, save_all=True, append_images=images[1:])
-        print(f"Form filled successfully. Output saved to {output_pdf_path}")
+        # Save filled PDF
+        images[0].save(
+            output_pdf_path,
+            save_all=True,
+            append_images=images[1:],
+            quality=100
+        )
+        
+        logger.info(f"Successfully filled form saved to {output_pdf_path}")
         return output_pdf_path
 
     except Exception as e:
-        print(f"Error filling form: {e}")
+        logger.error(f"Error in fill_form_with_extracted_data: {str(e)}")
         raise
 
-
-def fill_pdf_form(pdf_path, extracted_data):
-    # Ensure extracted_data is a dictionary
-    # if isinstance(extracted_data, str):
-    #     try:
-    #         extracted_data = json.loads(extracted_data)
-    #     except json.JSONDecodeError as e:
-    #         print(f"Error decoding JSON: {e}")
-    #         raise ValueError("extracted_data should be a dictionary or a JSON string that can be converted to a dictionary")
-
-    # if not isinstance(extracted_data, dict):
-    #     raise ValueError("extracted_data should be a dictionary")
+def fill_pdf_form(pdf_path, extracted_data, output_path):
+    """Main function to process and fill PDF form"""
+    temp_dir = None
     try:
-        search_words = [".name*", ".date of birth*", ".gender*", "address*", ".pan*", "mobile no."]  # List of words to find
-        word_positions = find_multiple_word_positions(pdf_path, search_words)
-        print(f"Word Positions: {word_positions}")  # Debugging statement
+        # Create temp directory for processing
         temp_dir = tempfile.mkdtemp()
-        output_pdf_path = os.path.join(temp_dir, "filled_form.pdf")  # Output path for filled PDF
-        result = fill_form_with_extracted_data(pdf_path, extracted_data, word_positions, output_pdf_path)
-        print(f"Result: {result}")  # Debugging statement
-        return result
+        temp_output = os.path.join(temp_dir, "filled_form.pdf")
+        
+        # Find field positions in the PDF
+        search_words = [
+            ".name*", ".date of birth*", ".gender*", 
+            "address*", ".pan*", "mobile no."
+        ]
+        word_positions = find_multiple_word_positions(pdf_path, search_words)
+        
+        # Fill the form with data
+        result_path = fill_form_with_extracted_data(
+            pdf_path,
+            extracted_data,
+            word_positions,
+            temp_output
+        )
+        
+        # Move to final output location
+        shutil.move(result_path, output_path)
+        return output_path
+
     except Exception as e:
-        print(f"PDF Processing Error: {e}")
-        raise  # Re-raise to be caught by Flask
+        logger.error(f"Error in fill_pdf_form: {str(e)}")
+        raise
     finally:
-        # Clean up temp files
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        # Clean up temp directory
+        if temp_dir and os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)
