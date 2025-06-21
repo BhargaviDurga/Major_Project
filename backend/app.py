@@ -10,18 +10,18 @@ import shutil
 
 
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 CORS(app, resources={
-  r"/*": {
-    "origins": [
-      "https://smartforms-frontend.onrender.com",
-      "http://localhost:3000"  # Keep for local testing
-    ]
-  }
+    r"/fill-form": {
+        "origins": ["https://your-frontend-url.com"],
+        "methods": ["POST"],
+        "allow_headers": ["Content-Type"]
+    }
 })
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+
 
 # Create a temporary directory
 TEMP_UPLOAD_FOLDER = tempfile.mkdtemp()
@@ -80,12 +80,15 @@ def update_data():
 
 @app.route("/fill-form", methods=["POST"])
 def fill_form():
+    print("Request received - Files:", request.files)  # Debug log
+    print("Request headers:", request.headers)  # Debug log
     try:
         if "file" not in request.files:
             return jsonify({"error": "No file uploaded"}), 400
 
         file = request.files["file"]
         if file.filename == '':
+            print("Empty filename")  # Debug log
             return jsonify({"error": "No selected file"}), 400
 
         # Create temp file

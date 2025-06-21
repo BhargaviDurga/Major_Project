@@ -31,32 +31,65 @@ export default function UploadForm() {
         }
     };
 
-    const handlePdfUpload = async () => {
-        if (!pdfFile) {
-            setError("Please select a PDF file first");
-            return;
-        }
-        setError(null);
-        setLoading(true);
-        const formData = new FormData();
-        formData.append('file', pdfFile);
+const handlePdfUpload = async () => {
+    if (!pdfFile) {
+        setError("Please select a PDF file first");
+        return;
+    }
+    setError(null);
+    setLoading(true);
+    
+    const formData = new FormData();
+    formData.append('file', pdfFile);
 
-        try {
-            const response = await axios.post(`${apiUrl}/fill-form`, formData, {
-                headers: {
-                    'Content-Type': 'multipart/form-data',
-                },
-                responseType: 'blob',
-            });
-            const url = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
-            setFilledPdfUrl(url);
-        } catch (error) {
-            console.error("Error uploading PDF:", error);
-            setError("Failed to process the PDF. Please try again.");
-        } finally {
-            setLoading(false);
+    try {
+        console.log("Uploading file:", pdfFile.name); // Debug log
+        
+        const response = await axios.post(`${apiUrl}/fill-form`, formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            },
+            responseType: 'blob',
+            timeout: 30000 // 30 seconds timeout
+        });
+
+        // Verify response is PDF
+        if (response.headers['content-type'] !== 'application/pdf') {
+            const errorData = await response.data.text();
+            throw new Error(errorData || "Server returned invalid response");
         }
-    };
+
+        const url = URL.createObjectURL(response.data);
+        setFilledPdfUrl(url);
+        
+    } catch (error) {
+        let errorMessage = "Failed to process PDF";
+        
+        if (error.response) {
+            // Try to get error message from response
+            if (error.response.data instanceof Blob) {
+                const errorText = await error.response.data.text();
+                errorMessage = errorText || `Server error: ${error.response.status}`;
+            } else {
+                errorMessage = error.response.data?.message || `Server error: ${error.response.status}`;
+            }
+        } else if (error.request) {
+            errorMessage = "No response from server";
+        } else {
+            errorMessage = error.message;
+        }
+        
+        console.error("Detailed error:", {
+            error: error,
+            config: error.config,
+            response: error.response
+        });
+        
+        setError(errorMessage);
+    } finally {
+        setLoading(false);
+    }
+};
 
     const handleDownloadAndRedirect = () => {
         if (filledPdfUrl) {
