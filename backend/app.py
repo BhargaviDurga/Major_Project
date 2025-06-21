@@ -1,125 +1,146 @@
 from flask import Flask, request, jsonify, send_file
 import os
 import json
-from backend.form_filler import extract_text_from_id, fill_pdf_form
 from werkzeug.utils import secure_filename
 from flask_cors import CORS
 import tempfile
 import atexit
 import shutil
+import logging
+from backend.form_filler import extract_text_from_id, fill_pdf_form
 
-
+# Initialize Flask app
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+
+# Configuration
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB file limit
 CORS(app, resources={
-  r"/*": {
-    "origins": [
-      "https://smartforms-frontend.onrender.com",
-      "http://localhost:3000"  # Keep for local testing
-    ]
-  }
+    r"/*": {
+        "origins": [
+            "https://smartforms-frontend.onrender.com",
+            "http://localhost:3000"
+        ],
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type"]
+    }
 })
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Create upload directory
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-
-
-# Create a temporary directory
-TEMP_UPLOAD_FOLDER = tempfile.mkdtemp()
-
-# Cleanup function
-def cleanup():
-    shutil.rmtree(TEMP_UPLOAD_FOLDER, ignore_errors=True)
-
-atexit.register(cleanup)
-
 @app.route("/upload-id", methods=["POST"])
 def upload_id():
-    if "files" not in request.files:
-        return jsonify({"error": "No files uploaded"}), 400
+    """Endpoint for uploading ID documents and extracting data"""
+    try:
+        if "files" not in request.files:
+            return jsonify({"error": "No files uploaded"}), 400
 
-    files = request.files.getlist("files")
-    extracted_data = {}
+        files = request.files.getlist("files")
+        extracted_data = {}
 
-    # Clear existing extracted data at the start of a new session or request
-    extracted_data_path = os.path.join(UPLOAD_FOLDER, "extracted_data.json")
-    if os.path.exists(extracted_data_path):
-        os.remove(extracted_data_path)
+        for file in files:
+            if file.filename == '':
+                continue
 
-    for file in files:
-        temp_file = tempfile.NamedTemporaryFile(dir=TEMP_UPLOAD_FOLDER, delete=False)
-        file.save(temp_file.name)
-        temp_file.close()
+            # Create temp file
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_file:
+                file.save(tmp_file.name)
+                tmp_path = tmp_file.name
 
-        try:
-            new_data = extract_text_from_id(temp_file.name)
-            for key, value in new_data.items():
-                if key in extracted_data and extracted_data[key] == "NOT FOUND":
-                    extracted_data[key] = value
-                elif key not in extracted_data:
-                    extracted_data[key] = value
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            try:
+                # Extract data from ID
+                new_data = extract_text_from_id(tmp_path)
+                
+                # Merge with existing data
+                for key, value in new_data.items():
+                    if key in extracted_data and extracted_data[key] == "NOT FOUND":
+                        extracted_data[key] = value
+                    elif key not in extracted_data:
+                        extracted_data[key] = value
+            except Exception as e:
+                logger.error(f"Error processing {file.filename}: {str(e)}")
+                return jsonify({"error": f"Failed to process {file.filename}"}), 500
+            finally:
+                # Clean up temp file
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
 
-    # Save combined extracted data to a temporary file
-    with open(extracted_data_path, "w") as f:
-        json.dump(extracted_data, f)
+        return jsonify({
+            "message": "ID processed successfully",
+            "extracted_data": extracted_data
+        })
 
-    return jsonify({"extracted_data": extracted_data})
+    except Exception as e:
+        logger.error(f"Error in upload-id: {str(e)}")
+        return jsonify({"error": "Server error processing IDs"}), 500
 
 @app.route("/update-data", methods=["POST"])
 def update_data():
-    updated_data = request.json
-    # Save updated data to a temporary file
-    extracted_data_path = os.path.join(UPLOAD_FOLDER, "extracted_data.json")
+    """Endpoint for updating extracted data"""
     try:
-        with open(extracted_data_path, "w") as f:
-            json.dump(updated_data, f)
-        return jsonify({"message": "Details updated successfully!"})
+        updated_data = request.get_json()
+        if not updated_data:
+            return jsonify({"error": "No data provided"}), 400
+
+        # In production, you might want to validate the data structure here
+        return jsonify({
+            "message": "Details updated successfully!",
+            "extracted_data": updated_data
+        })
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Error in update-data: {str(e)}")
+        return jsonify({"error": "Server error updating data"}), 500
 
 @app.route("/fill-form", methods=["POST"])
 def fill_form():
-    print("Request received - Files:", request.files)  # Debug log
-    print("Request headers:", request.headers)  # Debug log
+    """Endpoint for filling PDF forms"""
     try:
+        # Check file upload
         if "file" not in request.files:
             return jsonify({"error": "No file uploaded"}), 400
 
         file = request.files["file"]
         if file.filename == '':
-            print("Empty filename")  # Debug log
             return jsonify({"error": "No selected file"}), 400
 
-        # Create temp file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-            file.save(tmp.name)
-            tmp_path = tmp.name
+        # Get extracted data (now comes from frontend)
+        extracted_data = request.form.get("extracted_data")
+        if not extracted_data:
+            return jsonify({"error": "No extracted data provided"}), 400
 
-        # Read extracted data
-        extracted_data_path = os.path.join(tempfile.gettempdir(), "extracted_data.json")
-        if not os.path.exists(extracted_data_path):
-            return jsonify({"error": "No extracted data found"}), 400
-
-        with open(extracted_data_path, "r") as f:
-            extracted_data = json.load(f)
+        try:
+            extracted_data = json.loads(extracted_data)
+        except json.JSONDecodeError:
+            return jsonify({"error": "Invalid extracted data format"}), 400
 
         # Process PDF
-        output_path = fill_pdf_form(tmp_path, extracted_data)
-
-        # Delete the extracted data file after sending the response
-        # if os.path.exists(extracted_data_path):
-        #     os.remove(extracted_data_path)
-        
-        # Return the filled PDF
-        return send_file(output_path, as_attachment=False, mimetype="application/pdf")
-    
+        with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp_pdf:
+            file.save(tmp_pdf.name)
+            
+            # Create temp output directory
+            with tempfile.TemporaryDirectory() as temp_dir:
+                output_path = os.path.join(temp_dir, "filled_form.pdf")
+                filled_path = fill_pdf_form(tmp_pdf.name, extracted_data, output_path)
+                
+                if not os.path.exists(filled_path):
+                    raise ValueError("Failed to generate filled PDF")
+                
+                return send_file(
+                    filled_path,
+                    mimetype="application/pdf",
+                    as_attachment=False,
+                    download_name="filled_form.pdf"
+                )
 
     except Exception as e:
-        print(f"Error processing PDF: {str(e)}")  # This will appear in Render logs
-        return jsonify({"error": str(e)}), 500
-            
+        logger.error(f"Error in fill-form: {str(e)}")
+        return jsonify({"error": f"Failed to process PDF: {str(e)}"}), 500
 
 if __name__ == "__main__":
     app.run()

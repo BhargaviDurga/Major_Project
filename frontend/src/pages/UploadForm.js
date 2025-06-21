@@ -17,7 +17,6 @@ export default function UploadForm() {
     const [filledPdfUrl, setFilledPdfUrl] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
-
     const { idFiles, extractedData } = location.state || {};
 
     const handlePdfSelect = (file) => {
@@ -32,8 +31,8 @@ export default function UploadForm() {
     };
 
 const handlePdfUpload = async () => {
-    if (!pdfFile) {
-        setError("Please select a PDF file first");
+    if (!pdfFile || !extractedData) {
+        setError(!pdfFile ? "Please select a PDF file first" : "No extracted data available");
         return;
     }
     setError(null);
@@ -41,53 +40,90 @@ const handlePdfUpload = async () => {
     
     const formData = new FormData();
     formData.append('file', pdfFile);
+    formData.append('extracted_data', JSON.stringify(extractedData));
 
     try {
-        console.log("Uploading file:", pdfFile.name); // Debug log
+        console.log("Uploading file and data:", {
+            pdfFile: pdfFile.name,
+            extractedData: Object.keys(extractedData)
+        });
         
         const response = await axios.post(`${apiUrl}/fill-form`, formData, {
             headers: {
                 'Content-Type': 'multipart/form-data',
             },
             responseType: 'blob',
-            timeout: 30000 // 30 seconds timeout
+            timeout: 30000,
+            onUploadProgress: progressEvent => {
+                const percentCompleted = Math.round(
+                    (progressEvent.loaded * 100) / progressEvent.total
+                );
+                console.log(`Upload progress: ${percentCompleted}%`);
+            }
         });
 
         // Verify response is PDF
-        if (response.headers['content-type'] !== 'application/pdf') {
+        if (!response.headers['content-type']?.includes('application/pdf')) {
             const errorData = await response.data.text();
-            throw new Error(errorData || "Server returned invalid response");
+            throw new Error(errorData || "Server returned invalid PDF response");
         }
 
         const url = URL.createObjectURL(response.data);
         setFilledPdfUrl(url);
         
+        // Store the filled PDF in session storage
+        const reader = new FileReader();
+        reader.readAsDataURL(response.data);
+        reader.onloadend = () => {
+            sessionStorage.setItem('filledPdf', reader.result);
+        };
+        
     } catch (error) {
-        let errorMessage = "Failed to process PDF";
+        let errorMessage = "Failed to process form";
         
         if (error.response) {
-            // Try to get error message from response
+            // Handle different error response types
             if (error.response.data instanceof Blob) {
-                const errorText = await error.response.data.text();
-                errorMessage = errorText || `Server error: ${error.response.status}`;
-            } else {
-                errorMessage = error.response.data?.message || `Server error: ${error.response.status}`;
+                try {
+                    const errorText = await error.response.data.text();
+                    const errorJson = safeJsonParse(errorText);
+                    errorMessage = errorJson?.message || errorText || `Server error (${error.response.status})`;
+                } catch {
+                    errorMessage = `Server error (${error.response.status})`;
+                }
+            } else if (typeof error.response.data === 'object') {
+                errorMessage = error.response.data.message || 
+                              `Server error (${error.response.status})`;
             }
+        } else if (error.code === 'ECONNABORTED') {
+            errorMessage = "Request timed out. Please try again.";
         } else if (error.request) {
-            errorMessage = "No response from server";
+            errorMessage = "No response from server. Please check your connection.";
         } else {
-            errorMessage = error.message;
+            errorMessage = error.message || "An unknown error occurred";
         }
         
-        console.error("Detailed error:", {
+        console.error("PDF processing error:", {
             error: error,
-            config: error.config,
-            response: error.response
+            endpoint: `${apiUrl}/fill-form`,
+            requestData: {
+                pdfFile: pdfFile.name,
+                dataFields: Object.keys(extractedData)
+            }
         });
         
         setError(errorMessage);
     } finally {
         setLoading(false);
+    }
+};
+
+// Helper function to safely parse JSON
+const safeJsonParse = (str) => {
+    try {
+        return JSON.parse(str);
+    } catch {
+        return null;
     }
 };
 

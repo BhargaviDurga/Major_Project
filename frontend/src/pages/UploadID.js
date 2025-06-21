@@ -211,7 +211,7 @@ function UploadID() {
     extractedDataRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const handleUpload = async () => {
+const handleUpload = async () => {
     if (files.length === 0) {
       setError('Please select at least one ID document');
       return;
@@ -228,15 +228,51 @@ function UploadID() {
           'Content-Type': 'multipart/form-data',
         },
       });
-      const newExtractedData = response.data.extracted_data;
-      setExtractedData(prevData => ({ ...prevData, ...newExtractedData }));
-      setEditableData(prevData => ({ ...prevData, ...newExtractedData }));
+
+      // Validate response structure
+      if (!response.data || !response.data.extracted_data) {
+        throw new Error('Invalid response structure from server');
+      }
+
+      // Process the extracted data
+      const serverData = response.data.extracted_data;
+      
+      // Create a clean data object with default values
+      const cleanData = {
+        'Name': serverData.Name || 'NOT FOUND',
+        'First Name': serverData['First Name'] || serverData.Name?.split(' ')[0] || 'NOT FOUND',
+        'Last Name': serverData['Last Name'] || serverData.Name?.split(' ').slice(1).join(' ') || 'NOT FOUND',
+        'Date of Birth': serverData['Date of Birth'] || 'NOT FOUND',
+        'Phone Number': serverData['Phone Number'] || 'NOT FOUND',
+        'Aadhaar Number': serverData['Aadhaar Number'] || 'NOT FOUND',
+        'Gender': serverData['Gender'] || 'NOT FOUND',
+        'PAN Number': serverData['PAN Number'] || 'NOT FOUND',
+        'VID Number': serverData['VID Number'] || 'NOT FOUND',
+        'Address': serverData['Address'] || 'NOT FOUND'
+      };
+
+      // Update state with the processed data
+      setExtractedData(cleanData);
+      setEditableData(cleanData);
+      
+      // Store in sessionStorage for persistence
+      sessionStorage.setItem('extractedData', JSON.stringify(cleanData));
+
       setShowScrollIndicator(true);
-      // Short delay to ensure the data is rendered before scrolling
       setTimeout(scrollToExtractedData, 500);
+
     } catch (error) {
       console.error('Error uploading files:', error);
-      setError('Failed to upload files. Please try again.');
+      setError(error.response?.data?.error || 
+               error.message || 
+               'Failed to process documents. Please try again.');
+      
+      // Fallback to any previously saved data
+      const savedData = sessionStorage.getItem('extractedData');
+      if (savedData) {
+        setExtractedData(JSON.parse(savedData));
+        setEditableData(JSON.parse(savedData));
+      }
     } finally {
       setIsLoading(false);
     }
