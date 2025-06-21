@@ -53,7 +53,7 @@ const handlePdfUpload = async () => {
                 'Content-Type': 'multipart/form-data',
             },
             responseType: 'blob',
-            timeout: 30000,
+            timeout: 200000,
             onUploadProgress: progressEvent => {
                 const percentCompleted = Math.round(
                     (progressEvent.loaded * 100) / progressEvent.total
