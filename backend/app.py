@@ -80,30 +80,42 @@ def update_data():
 
 @app.route("/fill-form", methods=["POST"])
 def fill_form():
-    if "file" not in request.files:
-        return jsonify({"error": "No file uploaded"}), 400
-
-    file = request.files["file"]
-    filename = secure_filename(file.filename)
-    pdf_path = os.path.join(UPLOAD_FOLDER, filename)
-    file.save(pdf_path)
-
     try:
-        # Read extracted data from the temporary file
-        extracted_data_path = os.path.join(UPLOAD_FOLDER, "extracted_data.json")
+        if "file" not in request.files:
+            return jsonify({"error": "No file uploaded"}), 400
+
+        file = request.files["file"]
+        if file.filename == '':
+            return jsonify({"error": "No selected file"}), 400
+
+        # Create temp file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            file.save(tmp.name)
+            tmp_path = tmp.name
+
+        # Read extracted data
+        extracted_data_path = os.path.join(tempfile.gettempdir(), "extracted_data.json")
+        if not os.path.exists(extracted_data_path):
+            return jsonify({"error": "No extracted data found"}), 400
+
         with open(extracted_data_path, "r") as f:
             extracted_data = json.load(f)
-        
-        filled_pdf_path = fill_pdf_form(pdf_path, extracted_data)
-        response = send_file(filled_pdf_path, as_attachment=False, mimetype="application/pdf")
-        
+
+        # Process PDF
+        output_path = fill_pdf_form(tmp_path, extracted_data)
+
         # Delete the extracted data file after sending the response
         # if os.path.exists(extracted_data_path):
         #     os.remove(extracted_data_path)
         
-        return response
+        # Return the filled PDF
+        return send_file(output_path, as_attachment=False, mimetype="application/pdf")
+    
+
     except Exception as e:
+        print(f"Error processing PDF: {str(e)}")  # This will appear in Render logs
         return jsonify({"error": str(e)}), 500
+            
 
 if __name__ == "__main__":
     app.run()
