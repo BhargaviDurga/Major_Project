@@ -12,11 +12,12 @@ import shutil
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 CORS(app, resources={
-    r"/fill-form": {
-        "origins": ["https://your-frontend-url.com"],
-        "methods": ["POST"],
-        "allow_headers": ["Content-Type"]
-    }
+  r"/*": {
+    "origins": [
+      "https://smartforms-frontend.onrender.com",
+      "http://localhost:3000"  # Keep for local testing
+    ]
+  }
 })
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
