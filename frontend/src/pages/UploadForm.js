@@ -31,10 +31,19 @@ export default function UploadForm() {
     };
 
 const handlePdfUpload = async () => {
+    // Validate inputs
     if (!pdfFile || !extractedData) {
         setError(!pdfFile ? "Please select a PDF file first" : "No extracted data available");
         return;
     }
+
+    // Check file size (10MB limit)
+    const MAX_FILE_SIZE = 20 * 1024 * 1024; // 10MB
+    if (pdfFile.size > MAX_FILE_SIZE) {
+        setError("File size exceeds 20MB limit. Please upload a smaller PDF.");
+        return;
+    }
+
     setError(null);
     setLoading(true);
     
@@ -42,25 +51,30 @@ const handlePdfUpload = async () => {
     formData.append('file', pdfFile);
     formData.append('extracted_data', JSON.stringify(extractedData));
 
+    // Configuration for the request
+    const config = {
+        headers: {
+            'Content-Type': 'multipart/form-data',
+        },
+        responseType: 'blob',
+        timeout: 120000, // 2 minutes timeout
+        onUploadProgress: progressEvent => {
+            const percentCompleted = Math.round(
+                (progressEvent.loaded * 100) / progressEvent.total
+            );
+            console.log(`Upload progress: ${percentCompleted}%`);
+            // Optionally update UI with progress
+        }
+    };
+
     try {
         console.log("Uploading file and data:", {
             pdfFile: pdfFile.name,
-            extractedData: Object.keys(extractedData)
+            extractedData: Object.keys(extractedData),
+            fileSize: `${(pdfFile.size / (1024 * 1024)).toFixed(2)} MB`
         });
         
-        const response = await axios.post(`${apiUrl}/fill-form`, formData, {
-            headers: {
-                'Content-Type': 'multipart/form-data',
-            },
-            responseType: 'blob',
-            timeout: 200000,
-            onUploadProgress: progressEvent => {
-                const percentCompleted = Math.round(
-                    (progressEvent.loaded * 100) / progressEvent.total
-                );
-                console.log(`Upload progress: ${percentCompleted}%`);
-            }
-        });
+        const response = await axios.post(`${apiUrl}/fill-form`, formData, config);
 
         // Verify response is PDF
         if (!response.headers['content-type']?.includes('application/pdf')) {
@@ -68,6 +82,7 @@ const handlePdfUpload = async () => {
             throw new Error(errorData || "Server returned invalid PDF response");
         }
 
+        // Create URL for the filled PDF
         const url = URL.createObjectURL(response.data);
         setFilledPdfUrl(url);
         
@@ -80,39 +95,64 @@ const handlePdfUpload = async () => {
         
     } catch (error) {
         let errorMessage = "Failed to process form";
+        let errorDetails = null;
         
         if (error.response) {
-            // Handle different error response types
-            if (error.response.data instanceof Blob) {
-                try {
+            // Server responded with error status code
+            try {
+                // Handle blob response (common for PDF endpoints)
+                if (error.response.data instanceof Blob) {
                     const errorText = await error.response.data.text();
                     const errorJson = safeJsonParse(errorText);
-                    errorMessage = errorJson?.message || errorText || `Server error (${error.response.status})`;
-                } catch {
-                    errorMessage = `Server error (${error.response.status})`;
+                    
+                    errorMessage = errorJson?.error || errorJson?.message || errorText;
+                    errorDetails = errorJson?.details;
+                    
+                    // Specific error handling
+                    if (errorMessage.includes('tesseract is not installed')) {
+                        errorMessage = "OCR processing unavailable on server";
+                        errorDetails = "The server is missing required OCR capabilities. Please contact support.";
+                    }
+                } 
+                // Handle JSON response
+                else if (typeof error.response.data === 'object') {
+                    errorMessage = error.response.data.error || 
+                                 error.response.data.message || 
+                                 `Server error (${error.response.status})`;
+                    errorDetails = error.response.data.details;
                 }
-            } else if (typeof error.response.data === 'object') {
-                errorMessage = error.response.data.message || 
-                              `Server error (${error.response.status})`;
+            } catch (parseError) {
+                console.error("Error parsing error response:", parseError);
+                errorMessage = `Server error (${error.response.status})`;
             }
-        } else if (error.code === 'ECONNABORTED') {
-            errorMessage = "Request timed out. Please try again.";
-        } else if (error.request) {
-            errorMessage = "No response from server. Please check your connection.";
-        } else {
+        } 
+        else if (error.code === 'ECONNABORTED') {
+            errorMessage = "Request timed out. The server is taking too long to respond.";
+            errorDetails = "Please try again later or contact support if the problem persists.";
+        } 
+        else if (error.request) {
+            errorMessage = "No response from server.";
+            errorDetails = "Please check your internet connection and try again.";
+        } 
+        else {
             errorMessage = error.message || "An unknown error occurred";
         }
-        
+
         console.error("PDF processing error:", {
             error: error,
             endpoint: `${apiUrl}/fill-form`,
             requestData: {
                 pdfFile: pdfFile.name,
-                dataFields: Object.keys(extractedData)
-            }
+                dataFields: Object.keys(extractedData),
+                fileSize: `${(pdfFile.size / (1024 * 1024)).toFixed(2)} MB`
+            },
+            errorMessage,
+            errorDetails
         });
         
-        setError(errorMessage);
+        // Set error in state - you might want to show both message and details in your UI
+        setError(errorDetails ? `${errorMessage}: ${errorDetails}` : errorMessage);
+        
     } finally {
         setLoading(false);
     }

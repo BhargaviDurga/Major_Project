@@ -101,6 +101,17 @@ def update_data():
 def fill_form():
     """Endpoint for filling PDF forms"""
     try:
+        # Check for Tesseract availability first
+        try:
+            import pytesseract
+            pytesseract.get_tesseract_version()
+        except Exception as ocr_error:
+            logger.error(f"OCR dependency error: {str(ocr_error)}")
+            return jsonify({
+                "error": "Server missing required OCR capabilities. Please contact support.",
+                "details": str(ocr_error)
+            }), 503
+
         # Validate file upload
         if "file" not in request.files:
             logger.error("No file part in request")
@@ -152,7 +163,10 @@ def fill_form():
                     )
                 except Exception as e:
                     logger.error(f"PDF processing failed: {str(e)}")
-                    return jsonify({"error": f"Failed to process PDF: {str(e)}"}), 500
+                    return jsonify({
+                        "error": "Failed to process PDF",
+                        "details": str(e)
+                    }), 500
 
     except Exception as e:
         logger.error(f"Unexpected error in fill-form: {str(e)}")
