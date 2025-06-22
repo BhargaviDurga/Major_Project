@@ -201,13 +201,19 @@ const safeJsonParse = (str) => {
         navigate('/upload-id', { state: { idFiles, extractedData } });
     };
 
-    // Cleanup URLs when component unmounts
-    React.useEffect(() => {
-        return () => {
-            if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
-            if (filledPdfUrl) URL.revokeObjectURL(filledPdfUrl);
-        };
-    }, [pdfPreviewUrl, filledPdfUrl]);
+    // // Cleanup URLs when component unmounts
+    // React.useEffect(() => {
+    //     return () => {
+    //         if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
+    //         if (filledPdfUrl) URL.revokeObjectURL(filledPdfUrl);
+    //     };
+    // }, [pdfPreviewUrl, filledPdfUrl]);
+
+React.useEffect(() => {
+    return () => {
+        if (filledPdfUrl) URL.revokeObjectURL(filledPdfUrl);
+    };
+}, [filledPdfUrl]);
 
     return (
         <div className="form-upload-container">

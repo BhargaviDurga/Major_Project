@@ -320,9 +320,15 @@ const handleUpload = async () => {
     setEditableData({ ...extractedData });
   };
 
-  const handleUploadForm = () => {
-    navigate('/upload-form', { state: { idFiles: files, extractedData } });
-  };
+const handleUploadForm = () => {
+  navigate('/upload-form', { 
+    state: { 
+      idFiles: files, 
+      extractedData: editableData  // Critical fix
+    } 
+  });
+};
+
 
   const handleSwapNames = () => {
     let Name = editableData['Name'] || '';

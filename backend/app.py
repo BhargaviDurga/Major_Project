@@ -8,6 +8,7 @@ import atexit
 import shutil
 import logging
 from backend.form_filler import extract_text_from_id, fill_pdf_form
+import io
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -151,12 +152,16 @@ def fill_form():
                     )
                     
                     if not os.path.exists(filled_path):
-                        logger.error("PDF generation failed - no output file created")
+                        logger.error("PDF generation failed")
                         raise ValueError("Failed to generate filled PDF")
                     
-                    logger.info("Successfully generated filled PDF")
+                    # Read filled PDF into memory
+                    with open(filled_path, 'rb') as f:
+                        pdf_data = f.read()
+                    
+                    logger.info("PDF generated successfully")
                     return send_file(
-                        filled_path,
+                        io.BytesIO(pdf_data),
                         mimetype="application/pdf",
                         as_attachment=False,
                         download_name="filled_form.pdf"
@@ -167,9 +172,8 @@ def fill_form():
                         "error": "Failed to process PDF",
                         "details": str(e)
                     }), 500
-
     except Exception as e:
-        logger.error(f"Unexpected error in fill-form: {str(e)}")
+        logger.error(f"Unexpected error: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
 
 if __name__ == "__main__":
