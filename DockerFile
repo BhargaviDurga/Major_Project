@@ -1,4 +1,3 @@
-# Dockerfile
 FROM python:3.10-slim
 
 # Install system dependencies
@@ -7,27 +6,22 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr-eng \
     poppler-utils \
     libgl1 \
-    libsm6 \
-    libxext6 \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
+# Install Python dependencies FIRST (better caching)
 WORKDIR /app
-
-# Copy required files
 COPY ./backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt gunicorn==20.1.0  # ← Explicitly install gunicorn
+
+# Copy application code
 COPY ./backend /app
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Set Tesseract path
-ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/4.00/tessdata
+# Environment variables
+ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/4.00/tessdata \
+    OMP_THREAD_LIMIT=1 \
+    PORT=8000
 ENV FLASK_APP=wsgi.py
 ENV FLASK_ENV=production
 
-# Expose port
 EXPOSE 8000
-
-# Start command
 CMD ["gunicorn", "--worker-tmp-dir", "/tmp", "--timeout", "120", "--workers", "2", "wsgi:app", "--bind", "0.0.0.0:8000"]
