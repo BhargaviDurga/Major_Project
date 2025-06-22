@@ -18,8 +18,11 @@ import tempfile
 import shutil
 import logging
 
-pytesseract.pytesseract.tesseract_cmd = r'/usr/bin/tesseract'
+import platform
+import pytesseract
 
+if platform.system() == "Windows":
+    pytesseract.pytesseract.tesseract_cmd = r'C:\Users\Jada Bhargavi Durga\AppData\Local\Programs\Tesseract-OCR\tesseract.exe'
 
 def extract_text_from_id(image_path):
     os.environ["GOOGLE_API_KEY"] = "AIzaSyBSlkTW52fBvrHs-oByEb0AgSBo44qjm0A"
