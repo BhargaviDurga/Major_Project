@@ -191,5 +191,13 @@ def not_found(e):
 def server_error(e):
     return jsonify({"error": "Internal server error"}), 500
 
+@app.route('/env')
+def show_env():
+    return {
+        "tesseract_path": os.getenv('TESSDATA_PREFIX'),
+        "thread_limit": os.getenv('OMP_THREAD_LIMIT'),
+        "all_vars": dict(os.environ)
+    }
+
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))

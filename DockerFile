@@ -23,6 +23,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Set Tesseract path
 ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/4.00/tessdata
+ENV FLASK_APP=wsgi.py
+ENV FLASK_ENV=production
 
 # Expose port
 EXPOSE 8000
