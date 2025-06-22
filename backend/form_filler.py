@@ -18,7 +18,7 @@ import tempfile
 import shutil
 import logging
 
-pytesseract.pytesseract.tesseract_cmd = r'C:\Users\Jada Bhargavi Durga\AppData\Local\Programs\Tesseract-OCR'
+pytesseract.pytesseract.tesseract_cmd = r'C:\Users\Jada Bhargavi Durga\AppData\Local\Programs\Tesseract-OCR\tesseract.exe'
 
 
 def extract_text_from_id(image_path):
