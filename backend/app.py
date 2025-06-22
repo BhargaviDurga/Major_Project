@@ -10,6 +10,9 @@ import logging
 from backend.form_filler import extract_text_from_id, fill_pdf_form
 import io
 
+import pytesseract
+pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
+
 # Initialize Flask app
 app = Flask(__name__)
 
