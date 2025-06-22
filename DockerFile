@@ -1,6 +1,6 @@
 FROM python:3.10-slim
 
-# Install system dependencies
+# 1. Install system dependencies
 RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     tesseract-ocr-eng \
@@ -8,20 +8,27 @@ RUN apt-get update && apt-get install -y \
     libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies FIRST (better caching)
+# 2. Set working directory
 WORKDIR /app
-COPY ./backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt gunicorn==20.1.0  # ← Explicitly install gunicorn
 
-# Copy application code
+# 3. Install Python dependencies FIRST (better caching)
+COPY ./backend/requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# 4. Explicitly install gunicorn (critical fix)
+RUN pip install --no-cache-dir gunicorn==20.1.0
+
+# 5. Copy application code
 COPY ./backend /app
 
-# Environment variables
+# 6. Environment variables
 ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/4.00/tessdata \
     OMP_THREAD_LIMIT=1 \
     PORT=8000
-ENV FLASK_APP=wsgi.py
-ENV FLASK_ENV=production
+
+# 7. Verify installations (debugging)
+RUN pip list && which gunicorn && gunicorn --version
 
 EXPOSE 8000
 CMD ["gunicorn", "--worker-tmp-dir", "/tmp", "--timeout", "120", "--workers", "2", "wsgi:app", "--bind", "0.0.0.0:8000"]
