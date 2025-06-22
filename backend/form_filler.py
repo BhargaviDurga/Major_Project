@@ -18,6 +18,9 @@ import tempfile
 import shutil
 import logging
 
+pytesseract.pytesseract.tesseract_cmd = r'C:\Users\Jada Bhargavi Durga\AppData\Local\Programs\Tesseract-OCR\tesseract.exe'
+
+
 def extract_text_from_id(image_path):
     os.environ["GOOGLE_API_KEY"] = "AIzaSyBSlkTW52fBvrHs-oByEb0AgSBo44qjm0A"
     genai.configure(api_key="AIzaSyBSlkTW52fBvrHs-oByEb0AgSBo44qjm0A")
@@ -83,6 +86,11 @@ def extract_text_from_id(image_path):
     return extracted_data
 
 def find_multiple_word_positions(pdf_path, search_words):
+    try:
+        # Verify Tesseract is installed
+        pytesseract.get_tesseract_version()
+    except pytesseract.TesseractNotFoundError:
+        raise RuntimeError("Tesseract is not installed or not in system PATH")
     images = pdf2image.convert_from_path(pdf_path)
     word_positions = {word.lower(): [] for word in search_words}  # Initialize dictionary
 
